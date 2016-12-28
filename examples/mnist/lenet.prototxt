@@ -7,7 +7,7 @@ layer {
 }
 layer {
   name: "conv1"
-  type: "Convolution"
+  type: "ConvolutionBlock"
   bottom: "data"
   top: "conv1"
   param {
@@ -16,7 +16,7 @@ layer {
   param {
     lr_mult: 2
   }
-  convolution_param {
+  convolution_block_param {
     num_output: 20
     kernel_size: 5
     stride: 1
@@ -41,7 +41,7 @@ layer {
 }
 layer {
   name: "conv2"
-  type: "Convolution"
+  type: "ConvolutionBlock"
   bottom: "pool1"
   top: "conv2"
   param {
@@ -50,7 +50,7 @@ layer {
   param {
     lr_mult: 2
   }
-  convolution_param {
+  convolution_block_param {
     num_output: 50
     kernel_size: 5
     stride: 1
