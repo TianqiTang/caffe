@@ -89,6 +89,12 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   int out_spatial_dim_;
   int weight_offset_;
   int num_output_;
+  
+  //add blockdimx & blockdimy
+  int block_dim_x_;
+  int block_dim_y_;
+  //
+  
   bool bias_term_;
   bool is_1x1_;
   bool force_nd_im2col_;
