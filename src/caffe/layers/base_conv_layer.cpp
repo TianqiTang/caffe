@@ -286,7 +286,7 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
       for (int y = 0; y < block_y_num; y++) {
         if( y < block_y_num -1 ){
           Dtype* temp_weights = new Dtype[block_dim_y_ * conv_out_channels_ / group_];
-          Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim * y;
+          const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
           Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
           for (int i = 0; i < conv_out_channels_; i++) {
             for (int j = 0; j < block_dim_y_; j++) {
@@ -297,13 +297,13 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
               group_, conv_out_spatial_dim_, block_dim_y_, 
               (Dtype)1., temp_weights, temp_input, (Dtype)0., temp_output);
           caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-              <Dtype)1., temp_output, output + output_offset_ * g);
+              (Dtype)1., temp_output, output + output_offset_ * g);
           delete temp_weights;
           delete temp_input;
           delete temp_output;
         }
         Dtype* temp_weights = new Dtype[(kernel_dim_ % block_dim_y_) * conv_out_channels_ / group_];
-        Dtype* temp_input = col_buff + col_offset_ * g + (kernel_dim_ % block_dim_y_) * conv_out_spatial_dim * y;
+        const Dtype* temp_input = col_buff + col_offset_ * g + (kernel_dim_ % block_dim_y_) * conv_out_spatial_dim_ * y;
         Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
         for (int i = 0; i < conv_out_channels_; i++) {
           for (int j = 0; j < (kernel_dim_ % block_dim_y_); j++) {
@@ -314,7 +314,7 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
             group_, conv_out_spatial_dim_, block_dim_y_, 
             (Dtype)1., temp_weights, temp_input, (Dtype)0., temp_output);
         caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-            <Dtype)1., temp_output, output + output_offset_ * g);
+            (Dtype)1., temp_output, output + output_offset_ * g);
         delete temp_weights;
         delete temp_input;
         delete temp_output;
