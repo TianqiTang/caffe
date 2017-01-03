@@ -608,8 +608,8 @@ message ConvolutionParameter {
   optional bool force_nd_im2col = 17 [default = false];
   
   //add new parameters blockdim_x & blockdim_y
-  optional uint32 blockdim_x = 19; //The maximum length of row
-  optional uint32 blockdim_y = 20; //The maximum length of column
+  optional uint32 blockdim_x = 19 [default = 512]; //The maximum length of row
+  optional uint32 blockdim_y = 20 [default = 512]; //The maximum length of column
 }
 
 message CropParameter {
