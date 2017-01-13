@@ -1,10 +1,13 @@
 #include <algorithm>
 #include <vector>
+//#include <cstdlib>
 
 #include "caffe/filler.hpp"
 #include "caffe/layers/base_conv_layer.hpp"
 #include "caffe/util/im2col.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/fix_point.hpp"
+
 
 namespace caffe {
 
@@ -181,9 +184,10 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // Propagate gradients to the parameters (as directed by backward pass).
   this->param_propagate_down_.resize(this->blobs_.size(), true);
   
-  //setup blockdimx and blockdimy
+  //setup blockdimx and blockdimy and bitlevel
   block_dim_x_ = this->layer_param_.convolution_param().blockdim_x();
   block_dim_y_ = this->layer_param_.convolution_param().blockdim_y();
+  bit_level_ = this->layer_param_.convolution_param().bitlevel();
 }
 
 template <typename Dtype>
@@ -274,54 +278,75 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
     // kernel_dim: the dimension of one convolution kernel K
     // int block_x_num = (int)conv_out_channels_ / group_ / block_dim_x_;
     int block_y_num = (int)kernel_dim_ / block_dim_y_;
+    //std::cout<<block_y_num<<' '<<std::endl;
     if( block_y_num == 0 ) {
       caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
           group_, conv_out_spatial_dim_, kernel_dim_,
           (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
           (Dtype)0., output + output_offset_ * g);
+      caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+          output + output_offset_ * g, bit_level_, 1);
     }
     else {
-      for (int i = 0; i < output_offset_; i++)
-        output[output_offset_ * g + i] = (Dtype)0.;
-      for (int y = 0; y < block_y_num; y++) {
-        if( y < block_y_num -1 ){
+      //for (int i = 0; i < output_offset_; i++)
+        //output[output_offset_ * g + i] = (Dtype)0.;
+        //(output + output_offset_ * g)[i] = (Dtype)0.;
+      for (int y = 0; y <= block_y_num; y++) {
+        if( y <= block_y_num -1 ){
           Dtype* temp_weights = new Dtype[block_dim_y_ * conv_out_channels_ / group_];
-          const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
+          //std::cout<<"malloc succeed!"<<std::endl;
+          //const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
           //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
           for (int i = 0; i < conv_out_channels_ / group_; i++) {
             for (int j = 0; j < block_dim_y_; j++) {
-              temp_weights[i*block_dim_y_ + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              //temp_weights[i*block_dim_y_ + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              (temp_weights + i*block_dim_y_)[j] = (weights + weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_)[j];
+              //std::cout<<(temp_weights+i*block_dim_y_)[j]<<' '<<std::endl;
             }
           }
-          caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-              group_, conv_out_spatial_dim_, block_dim_y_, 
-              (Dtype)1., temp_weights, temp_input, (Dtype)1., output + output_offset_ * g);
+          if( y == 0 ) {
+            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+                group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
+                col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)0., output + output_offset_ * g);
+          }
+          else {
+            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+                group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
+                col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)1., output + output_offset_ * g);
+          }
           //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
           //    (Dtype)1., temp_output, output + output_offset_ * g);
           delete temp_weights;
-          delete temp_input;
+          //delete temp_input;
           //delete temp_output;
+          //std::cout<<(output+output_offset_ * g)[0]<<std::endl;
+          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+              output + output_offset_ * g, bit_level_, 1);
+          //std::cout<<(output+output_offset_ * g)[0]<<std::endl;
+          
         }
-        else {
+        else if( y == block_y_num && kernel_dim_ % block_dim_y_ != 0){
           Dtype* temp_weights = new Dtype[(kernel_dim_ % block_dim_y_) * conv_out_channels_ / group_];
-          const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
+          //const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
           //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
           for (int i = 0; i < conv_out_channels_ / group_; i++) {
             for (int j = 0; j < (kernel_dim_ % block_dim_y_); j++) {
-              temp_weights[i*(kernel_dim_ % block_dim_y_) + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              //temp_weights[i*(kernel_dim_ % block_dim_y_) + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              (temp_weights + i*(kernel_dim_ % block_dim_y_))[j] = (weights + weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ )[j];
             }
           }
           caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-              group_, conv_out_spatial_dim_, (kernel_dim_ % block_dim_y_), 
-              (Dtype)1., temp_weights, temp_input, (Dtype)1., output + output_offset_ * g);
+              group_, conv_out_spatial_dim_, (kernel_dim_ % block_dim_y_), (Dtype)1., temp_weights, 
+              col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)1., output + output_offset_ * g);
           //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
           //    (Dtype)1., temp_output, output + output_offset_ * g);
           delete temp_weights;
-          delete temp_input;
+          //delete temp_input;
           //delete temp_output;
+          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+             output + output_offset_ * g, bit_level_, 1);
         }
-      }
-      
+      }      
     }
   }
 }
@@ -388,10 +413,86 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
     col_buff = col_buffer_.gpu_data();
   }
   for (int g = 0; g < group_; ++g) {
-    caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-        group_, conv_out_spatial_dim_, kernel_dim_,
-        (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
-        (Dtype)0., output + output_offset_ * g);
+    int block_y_num = (int)kernel_dim_ / block_dim_y_;
+    std::cout<<kernel_dim_<<" "<<block_dim_y_<<" "<<block_y_num<<std::endl;
+    if( block_y_num == 0 ) {
+      caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+          group_, conv_out_spatial_dim_, kernel_dim_,
+          (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
+          (Dtype)0., output + output_offset_ * g);
+      //std::cout<<"block num equals 1"<<std::endl;
+    }
+    else {
+      std::cout<<"else begin"<<std::endl;
+      //for (int i = 0; i < output_offset_; i++)
+      //  (output + output_offset_ * g)[i] = (Dtype)0.;
+      for (int y = 0; y < block_y_num; y++) {
+        if( y < block_y_num -1 ){
+          std::cout<<"malloc begin"<<std::endl;
+          //Dtype* temp_weights = new Dtype[block_dim_y_ * conv_out_channels_ / group_];
+          Dtype* temp_weights;
+          //CUDA_CHECK(cudaGetDevice(&temp_weights));
+          CUDA_CHECK(cudaMalloc(&temp_weights, block_dim_y_ * conv_out_channels_ / group_ * sizeof(Dtype)));
+          //caffe_gpu_memset(size_, 0, gpu_ptr_);
+          std::cout<<"malloc success"<<std::endl;
+          //std::cout<<weights[weight_offset_ * g + 1]<<std::endl;
+          const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
+          //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
+          for (int i = 0; i < conv_out_channels_ / group_; i++) {
+            //for (int j = 0; j < block_dim_y_; j++) {
+             //std:: cout << i*block_dim_y_ + j << ", " << weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j << std::endl;
+              //temp_weights[i*block_dim_y_ + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              //std:: cout << i*block_dim_y_ + j << ", " <<weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j << std::endl;
+              CUDA_CHECK(cudaMemcpy(temp_weights + i*block_dim_y_*sizeof(Dtype), weights + (weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_)*sizeof(Dtype), 
+                  block_dim_y_*sizeof(Dtype), cudaMemcpyDeviceToDevice));
+            //}
+          }
+          std::cout<<"copy success"<<std::endl;
+          caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+              group_, conv_out_spatial_dim_, block_dim_y_, 
+              (Dtype)1., temp_weights, temp_input, (y==0?(Dtype)0.:(Dtype)1.), output + output_offset_ * g);
+          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
+          //    (Dtype)1., temp_output, output + output_offset_ * g);
+          //delete temp_weights;
+          //delete temp_input;
+          CUDA_CHECK(cudaFree(temp_weights));
+          
+         std::cout<<"block "<<y<<" finished"<<std::endl;
+          
+          //delete temp_output;
+          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+              output + output_offset_ * g, bit_level_, 2);
+          
+        }
+        else {
+          Dtype* temp_weights; //= new Dtype[(kernel_dim_ % block_dim_y_) * conv_out_channels_ / group_];
+          //CUDA_CHECK(cudaGetDevice(&temp_weights));
+          int block_dim_final_ = kernel_dim_ % block_dim_y_;
+          CUDA_CHECK(cudaMalloc(&temp_weights, block_dim_final_ * conv_out_channels_ / group_ * sizeof(Dtype)));
+          const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
+          //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
+          for (int i = 0; i < conv_out_channels_ / group_; i++) {
+            //for (int j = 0; j < (kernel_dim_ % block_dim_y_); j++) {
+              //temp_weights[i*(kernel_dim_ % block_dim_y_) + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
+              CUDA_CHECK(cudaMemcpy(temp_weights + i*block_dim_final_*sizeof(Dtype), 
+                  weights + (weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_)*sizeof(Dtype), 
+                  block_dim_final_*sizeof(Dtype), cudaMemcpyDeviceToDevice));
+            //}
+          }
+          caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+              group_, conv_out_spatial_dim_, (kernel_dim_ % block_dim_y_), 
+              (Dtype)1., temp_weights, temp_input, (Dtype)1., output + output_offset_ * g);
+          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
+          //    (Dtype)1., temp_output, output + output_offset_ * g);
+          //delete temp_weights;
+          //delete temp_input;
+          //delete temp_output;
+          CUDA_CHECK(cudaFree(temp_weights));
+          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+              output + output_offset_ * g, bit_level_, 2);
+        }
+      }      
+    }
   }
 }
 

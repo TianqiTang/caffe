@@ -3,10 +3,12 @@
 
 #include <vector>
 
+
 #include "caffe/blob.hpp"
 #include "caffe/layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/im2col.hpp"
+#include "caffe/common.hpp"
 
 namespace caffe {
 
@@ -93,6 +95,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   //add blockdimx & blockdimy
   int block_dim_x_;
   int block_dim_y_;
+  int bit_level_;
   //
   
   bool bias_term_;

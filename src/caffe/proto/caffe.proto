@@ -610,6 +610,7 @@ message ConvolutionParameter {
   //add new parameters blockdim_x & blockdim_y
   optional uint32 blockdim_x = 19 [default = 512]; //The maximum length of row
   optional uint32 blockdim_y = 20 [default = 512]; //The maximum length of column
+  optional uint32 bitlevel = 21 [default = 16]; //The bit level of fixed point
 }
 
 message CropParameter {
