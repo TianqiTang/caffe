@@ -96,6 +96,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   int block_dim_x_;
   int block_dim_y_;
   int bit_level_;
+  int scale_;
   //
   
   bool bias_term_;

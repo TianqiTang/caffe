@@ -611,6 +611,7 @@ message ConvolutionParameter {
   optional uint32 blockdim_x = 19 [default = 512]; //The maximum length of row
   optional uint32 blockdim_y = 20 [default = 512]; //The maximum length of column
   optional uint32 bitlevel = 21 [default = 16]; //The bit level of fixed point
+  optional uint32 scale = 22 [default = 4]; //The scale of fixed-point numbers
 }
 
 message CropParameter {

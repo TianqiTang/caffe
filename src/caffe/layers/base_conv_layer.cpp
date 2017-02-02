@@ -188,6 +188,7 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   block_dim_x_ = this->layer_param_.convolution_param().blockdim_x();
   block_dim_y_ = this->layer_param_.convolution_param().blockdim_y();
   bit_level_ = this->layer_param_.convolution_param().bitlevel();
+  scale_ = this->layer_param_.convolution_param().scale();
 }
 
 template <typename Dtype>
@@ -285,15 +286,16 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
           (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
           (Dtype)0., output + output_offset_ * g);
       caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-          output + output_offset_ * g, bit_level_, 1);
+          output + output_offset_ * g, bit_level_, scale_);
     }
     else {
-      //for (int i = 0; i < output_offset_; i++)
+      for (int i = 0; i < output_offset_; i++)
         //output[output_offset_ * g + i] = (Dtype)0.;
-        //(output + output_offset_ * g)[i] = (Dtype)0.;
+        (output + output_offset_ * g)[i] = (Dtype)0.;
       for (int y = 0; y <= block_y_num; y++) {
         if( y <= block_y_num -1 ){
           Dtype* temp_weights = new Dtype[block_dim_y_ * conv_out_channels_ / group_];
+          Dtype* temp_output = new Dtype[output_offset_];
           //std::cout<<"malloc succeed!"<<std::endl;
           //const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
           //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
@@ -304,29 +306,33 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
               //std::cout<<(temp_weights+i*block_dim_y_)[j]<<' '<<std::endl;
             }
           }
-          if( y == 0 ) {
-            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-                group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
-                col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)0., output + output_offset_ * g);
-          }
-          else {
-            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-                group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
-                col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)1., output + output_offset_ * g);
-          }
-          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-          //    (Dtype)1., temp_output, output + output_offset_ * g);
+          //if( y == 0 ) {
+          //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+          //      group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
+          //      col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)0., output + output_offset_ * g);
+          //}
+          //else {
+          caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+              group_, conv_out_spatial_dim_, block_dim_y_, (Dtype)1., temp_weights, 
+              col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)0., temp_output);
+          
+          caffe_cpu_fix<Dtype>(output_offset_, temp_output, temp_output, bit_level_, scale_);
+          
+          caffe_axpy<Dtype>(output_offset_, (Dtype)1., temp_output, output + output_offset_ * g);
+              
           delete temp_weights;
+          delete temp_output;
           //delete temp_input;
           //delete temp_output;
           //std::cout<<(output+output_offset_ * g)[0]<<std::endl;
-          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-              output + output_offset_ * g, bit_level_, 1);
+          //caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+          //    output + output_offset_ * g, bit_level_, scale_);
           //std::cout<<(output+output_offset_ * g)[0]<<std::endl;
           
         }
         else if( y == block_y_num && kernel_dim_ % block_dim_y_ != 0){
           Dtype* temp_weights = new Dtype[(kernel_dim_ % block_dim_y_) * conv_out_channels_ / group_];
+          Dtype* temp_output = new Dtype[output_offset_];
           //const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
           //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
           for (int i = 0; i < conv_out_channels_ / group_; i++) {
@@ -337,15 +343,21 @@ void BaseConvolutionLayer<Dtype>::forward_cpu_gemm(const Dtype* input,
           }
           caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
               group_, conv_out_spatial_dim_, (kernel_dim_ % block_dim_y_), (Dtype)1., temp_weights, 
-              col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)1., output + output_offset_ * g);
-          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-          //    (Dtype)1., temp_output, output + output_offset_ * g);
+              col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y, (Dtype)0., temp_output);
+              
+          caffe_cpu_fix<Dtype>(output_offset_, temp_output, temp_output, bit_level_, scale_);
+          
+          caffe_axpy<Dtype>(output_offset_, (Dtype)1., temp_output, output + output_offset_ * g);
+          
           delete temp_weights;
+          delete temp_output;
           //delete temp_input;
           //delete temp_output;
-          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-             output + output_offset_ * g, bit_level_, 1);
+          //caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+          //   output + output_offset_ * g, bit_level_, scale_);
         }
+        //caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+        //    output + output_offset_ * g, bit_level_, scale_);
       }      
     }
   }

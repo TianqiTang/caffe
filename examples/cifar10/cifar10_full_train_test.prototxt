@@ -56,6 +56,10 @@ layer {
     bias_filler {
       type: "constant"
     }
+    blockdim_x: 10
+    blockdim_y: 200
+    bitlevel: 10
+    scale: 3
   }
 }
 layer {
@@ -110,6 +114,10 @@ layer {
     bias_filler {
       type: "constant"
     }
+    blockdim_x: 10
+    blockdim_y: 200
+    bitlevel: 10
+    scale: 3
   }
 }
 layer {
@@ -158,6 +166,10 @@ layer {
     bias_filler {
       type: "constant"
     }
+    blockdim_x: 10
+    blockdim_y: 200
+    bitlevel: 10
+    scale: 3
   }
 }
 layer {
