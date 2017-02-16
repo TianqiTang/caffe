@@ -426,83 +426,72 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
   }
   for (int g = 0; g < group_; ++g) {
     int block_y_num = (int)kernel_dim_ / block_dim_y_;
-    std::cout<<kernel_dim_<<" "<<block_dim_y_<<" "<<block_y_num<<std::endl;
     if( block_y_num == 0 ) {
       caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
           group_, conv_out_spatial_dim_, kernel_dim_,
           (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
           (Dtype)0., output + output_offset_ * g);
-      //std::cout<<"block num equals 1"<<std::endl;
+	  caffe_gpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+          output + output_offset_ * g, bit_level_, scale_);
     }
     else {
-      std::cout<<"else begin"<<std::endl;
-      //for (int i = 0; i < output_offset_; i++)
-      //  (output + output_offset_ * g)[i] = (Dtype)0.;
-      for (int y = 0; y < block_y_num; y++) {
-        if( y < block_y_num -1 ){
-          std::cout<<"malloc begin"<<std::endl;
-          //Dtype* temp_weights = new Dtype[block_dim_y_ * conv_out_channels_ / group_];
+	  caffe_gpu_set(output_offset_, Dtype(0.), output+output_offset_*g);
+	  
+      for (int y = 0; y <= block_y_num; y++) {
+        if( y <= block_y_num -1 ){
           Dtype* temp_weights;
-          //CUDA_CHECK(cudaGetDevice(&temp_weights));
+		  Dtype* temp_output;
           CUDA_CHECK(cudaMalloc(&temp_weights, block_dim_y_ * conv_out_channels_ / group_ * sizeof(Dtype)));
-          //caffe_gpu_memset(size_, 0, gpu_ptr_);
-          std::cout<<"malloc success"<<std::endl;
-          //std::cout<<weights[weight_offset_ * g + 1]<<std::endl;
+		  CUDA_CHECK(cudaMalloc(&temp_output, output_offset_ * sizeof(Dtype)));
+		  caffe_gpu_set(output_offset_, Dtype(0.), temp_output);
           const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
-          //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
-          for (int i = 0; i < conv_out_channels_ / group_; i++) {
-            //for (int j = 0; j < block_dim_y_; j++) {
-             //std:: cout << i*block_dim_y_ + j << ", " << weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j << std::endl;
-              //temp_weights[i*block_dim_y_ + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
-              //std:: cout << i*block_dim_y_ + j << ", " <<weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j << std::endl;
-              CUDA_CHECK(cudaMemcpy(temp_weights + i*block_dim_y_*sizeof(Dtype), weights + (weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_)*sizeof(Dtype), 
-                  block_dim_y_*sizeof(Dtype), cudaMemcpyDeviceToDevice));
-            //}
+ 
+         for (int i = 0; i < conv_out_channels_ / group_; i++) {
+			caffe_gpu_memcpy(block_dim_y_, 
+			  weights + weight_offset_*g + i*kernel_dim_ + y*block_dim_y_,
+			  temp_weights + i*block_dim_y_);			  
           }
-          std::cout<<"copy success"<<std::endl;
           caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
               group_, conv_out_spatial_dim_, block_dim_y_, 
-              (Dtype)1., temp_weights, temp_input, (y==0?(Dtype)0.:(Dtype)1.), output + output_offset_ * g);
-          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-          //    (Dtype)1., temp_output, output + output_offset_ * g);
-          //delete temp_weights;
-          //delete temp_input;
+              (Dtype)1., temp_weights, temp_input, 
+			  (Dtype)0., temp_output);
+			  
+		  caffe_gpu_fix<Dtype>(output_offset_, temp_output, temp_output, bit_level_, scale_);
+
+		  caffe_gpu_axpy<Dtype>(output_offset_, (Dtype)1., temp_output, 
+			output + output_offset_ * g);
+
           CUDA_CHECK(cudaFree(temp_weights));
-          
-         std::cout<<"block "<<y<<" finished"<<std::endl;
-          
-          //delete temp_output;
-          //caffe_gpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-          //    output + output_offset_ * g, bit_level_, 2);
-          
+		  CUDA_CHECK(cudaFree(temp_output));          
         }
-        else {
-          Dtype* temp_weights; //= new Dtype[(kernel_dim_ % block_dim_y_) * conv_out_channels_ / group_];
-          //CUDA_CHECK(cudaGetDevice(&temp_weights));
+        else if( y == block_y_num && kernel_dim_%block_dim_y_ != 0){
+
+          Dtype* temp_weights; 
+		  Dtype* temp_output;
           int block_dim_final_ = kernel_dim_ % block_dim_y_;
           CUDA_CHECK(cudaMalloc(&temp_weights, block_dim_final_ * conv_out_channels_ / group_ * sizeof(Dtype)));
+		  CUDA_CHECK(cudaMalloc(&temp_output,  output_offset_ * sizeof(Dtype)));
+          caffe_gpu_set(output_offset_, Dtype(0.), temp_output);
           const Dtype* temp_input = col_buff + col_offset_ * g + block_dim_y_ * conv_out_spatial_dim_ * y;
-          //Dtype* temp_output = new Dtype[conv_out_channels_ / group_ * conv_out_spatial_dim_];
+
           for (int i = 0; i < conv_out_channels_ / group_; i++) {
-            //for (int j = 0; j < (kernel_dim_ % block_dim_y_); j++) {
-              //temp_weights[i*(kernel_dim_ % block_dim_y_) + j] = weights[weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_ + j];
-              CUDA_CHECK(cudaMemcpy(temp_weights + i*block_dim_final_*sizeof(Dtype), 
-                  weights + (weight_offset_ * g + i*kernel_dim_ + y*block_dim_y_)*sizeof(Dtype), 
-                  block_dim_final_*sizeof(Dtype), cudaMemcpyDeviceToDevice));
-            //}
+	        caffe_gpu_memcpy(block_dim_final_, 
+				weights + weight_offset_*g + i*kernel_dim_ + y*block_dim_y_,
+				temp_weights + i*block_dim_final_);
           }
           caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-              group_, conv_out_spatial_dim_, (kernel_dim_ % block_dim_y_), 
-              (Dtype)1., temp_weights, temp_input, (Dtype)1., output + output_offset_ * g);
-          //caffe_axpy<Dtype>(conv_out_channels_ / group_ * conv_out_spatial_dim_, 
-          //    (Dtype)1., temp_output, output + output_offset_ * g);
-          //delete temp_weights;
-          //delete temp_input;
-          //delete temp_output;
+              group_, conv_out_spatial_dim_, block_dim_final_, 
+              (Dtype)1., temp_weights, temp_input, 
+			  (Dtype)0., temp_output);
+			  
+		  caffe_gpu_fix<Dtype>(output_offset_, temp_output, temp_output, bit_level_, scale_);
+			  
+          caffe_gpu_axpy<Dtype>(output_offset_, (Dtype)1., temp_output, 
+			output + output_offset_ * g);
+
           CUDA_CHECK(cudaFree(temp_weights));
-          // remove by ttq
-		  //caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-           //   output + output_offset_ * g, bit_level_, 2);
+		  CUDA_CHECK(cudaFree(temp_output));          
+
         }
       }      
     }
