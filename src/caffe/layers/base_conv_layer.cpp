@@ -472,8 +472,8 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
          std::cout<<"block "<<y<<" finished"<<std::endl;
           
           //delete temp_output;
-          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-              output + output_offset_ * g, bit_level_, 2);
+          //caffe_gpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+          //    output + output_offset_ * g, bit_level_, 2);
           
         }
         else {
@@ -500,8 +500,9 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
           //delete temp_input;
           //delete temp_output;
           CUDA_CHECK(cudaFree(temp_weights));
-          caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
-              output + output_offset_ * g, bit_level_, 2);
+          // remove by ttq
+		  //caffe_cpu_fix<Dtype>(output_offset_, output + output_offset_ * g, 
+           //   output + output_offset_ * g, bit_level_, 2);
         }
       }      
     }
